@@ -1,29 +1,29 @@
 package com.getname.service.impl;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.getname.config.OpenWeatherProperties;
+import com.getname.dto.WeatherResponse;
 import com.getname.service.UpdateService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpMethod;
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
-
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class UpdateServiceImpl implements UpdateService {
+
     private final Map<String, String> codeToSmileMap = Map.of(
             "Clear", "Ясно ☀️",
             "Clouds", "Облачно ☁️",
@@ -34,51 +34,44 @@ public class UpdateServiceImpl implements UpdateService {
             "Mist", "Туман \uD83C\uDF2B️"
     );
 
+    private final OpenWeatherProperties openWeatherProperties;
+
     private final RestTemplate restTemplate;
-
-    private final ObjectMapper objectMapper;
-
-    private final HttpEntity<String> httpEntity;
-
-    @Value("${open_weather.token}")
-    private String openWeatherToken;
-
-    @Value("${open_weather.pattern}")
-    private String uriPattern;
 
     @Override
     public String process(String input) {
-        String jsonString;
-        JsonNode jsonNode;
+        input = normalizeInput(input);
+        WeatherResponse weatherResponse;
 
         try {
-            jsonString = fetchJsonFromApi(input);
+            weatherResponse = fetchJsonFromApi(input);
         } catch (RestClientException e) {
             log.error("Rest error ", e);
             return "Такого города у openWeather не нашлось...";
         }
 
-        try {
-            jsonNode = objectMapper.readTree(jsonString);
-        } catch (JsonProcessingException e) {
-            log.error("jsonString reading", e);
-            return "openWeather отправил нам точно не json 0_o";
-        }
-
-        return createWeatherInformationResponse(jsonNode);
+        return createWeatherInformationResponse(weatherResponse);
     }
 
-    private String createWeatherInformationResponse(JsonNode jsonNode) {
-        var city = jsonNode.get("name").asText();
-        var currentWeather = jsonNode.get("main").get("temp").asText();
-        var weatherDescription = jsonNode.get("weather").get(0).get("main").asText();
+    private String normalizeInput(String input) {
+        var separator = input.contains("-") ? "-" : " ";
+        return Arrays.stream(input.split(separator))
+                .map(String::toLowerCase)
+                .map(StringUtils::capitalize)
+                .collect(Collectors.joining(separator));
+    }
+
+    private String createWeatherInformationResponse(WeatherResponse weatherResponse) {
+        var city = weatherResponse.getName();
+        var currentWeather = weatherResponse.getMain().getTemp();
+        var weatherDescription = weatherResponse.getWeather()[0].getMain();
         var wd = codeToSmileMap.getOrDefault(weatherDescription, "Лучше не выходить");
-        var humidity = jsonNode.get("main").get("humidity").asText();
-        var pressure = jsonNode.get("main").get("pressure").asText();
-        var wind = jsonNode.get("wind").get("speed").asText();
-        var sunriseTimestamp = LocalDateTime.ofEpochSecond(jsonNode.get("sys").get("sunrise").asLong(),
+        var humidity = weatherResponse.getMain().getHumidity();
+        var pressure = weatherResponse.getMain().getPressure();
+        var wind = weatherResponse.getWind().getSpeed();
+        var sunriseTimestamp = LocalDateTime.ofEpochSecond(weatherResponse.getSys().getSunrise(),
                 0, ZoneOffset.of("+03:00"));
-        var sunsetTimestamp = LocalDateTime.ofEpochSecond(jsonNode.get("sys").get("sunset").asLong(),
+        var sunsetTimestamp = LocalDateTime.ofEpochSecond(weatherResponse.getSys().getSunset(),
                 0, ZoneOffset.of("+03:00"));
         var lengthOfDay = Duration.between(sunriseTimestamp, sunsetTimestamp);
 
@@ -96,10 +89,15 @@ public class UpdateServiceImpl implements UpdateService {
                 String.format("<b>Продолжительность дня:</b> %s ч. %s м.", lengthOfDay.getSeconds() / 3600, lengthOfDay.getSeconds() / 60 % 60));
     }
 
-    private String fetchJsonFromApi(String cityName) throws RestClientException {
-        var uriString = uriPattern.formatted(cityName, openWeatherToken);
-        return restTemplate.exchange(uriString, HttpMethod.GET, httpEntity, String.class)
-                .getBody();
+    private WeatherResponse fetchJsonFromApi(String cityName) throws RestClientException {
+        return restTemplate.getForObject(createUri(cityName), WeatherResponse.class);
     }
 
+    private String createUri(String cityName) {
+        return UriComponentsBuilder.fromHttpUrl(openWeatherProperties.getUri())
+                .queryParam("q", cityName)
+                .queryParam("appid", openWeatherProperties.getToken())
+                .queryParam("units", "metric")
+                .toUriString();
+    }
 }

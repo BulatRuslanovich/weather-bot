@@ -1,10 +1,11 @@
 server:
-  port: 8090
+  port: 8099
 
 bot:
   username: java_gradle_weather_bot
-  token: 7639793728:AAGlXfA1g_e8uXKonalgrJKouf9nEjZtP9E
+  uri:  unset
+  token: unset
 
-open_weather:
-  token: 8ba92a24346a990fe226d9aed45b2987
-  pattern: https://api.openweathermap.org/data/2.5/weather?q=%s&appid=%s&units=metric
+open-weather:
+  token: unset
+  uri: https://api.openweathermap.org/data/2.5/weather

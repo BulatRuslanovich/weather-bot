@@ -1,50 +1,55 @@
 package com.getname.controller;
 
+import com.getname.config.TelegramProperties;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.telegram.telegrambots.bots.TelegramLongPollingBot;
-import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.bots.TelegramWebhookBot;
+import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
+import org.telegram.telegrambots.meta.api.methods.updates.SetWebhook;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 @Slf4j
 @Component
-public class WeatherBot extends TelegramLongPollingBot {
+public class WeatherBot extends TelegramWebhookBot {
 
-    private final UpdateProcessor updateProcessor;
+    private final UpdateDispatcher updateDispatcher;
 
-    @Value("${bot.username}")
-    private String botUsername;
-
-    public WeatherBot(UpdateProcessor updateProcessor,  @Value("${bot.token}") String botToken) {
-        super(botToken);
-        this.updateProcessor = updateProcessor;
-    }
+    private final TelegramProperties telegramProperties;
 
     @PostConstruct
-    void init() {
-        updateProcessor.registerBot(this);
+    private void init() {
+        updateDispatcher.initBot(this);
+
+        try {
+            var webhook = SetWebhook.builder()
+                    .url(telegramProperties.getUri())
+                    .build();
+            this.setWebhook(webhook);
+        } catch (TelegramApiException e) {
+            log.error("Error with webhook", e);
+        }
     }
 
-    @Override
-    public void onUpdateReceived(Update update) {
-        updateProcessor.processUpdate(update);
+    public WeatherBot(UpdateDispatcher updateDispatcher, TelegramProperties telegramProperties) {
+        super(telegramProperties.getToken());
+        this.updateDispatcher = updateDispatcher;
+        this.telegramProperties = telegramProperties;
     }
 
     @Override
     public String getBotUsername() {
-        return botUsername;
+        return telegramProperties.getUsername();
     }
 
-    public void sendAnswerMessage(SendMessage message) {
-        if (message != null) {
-            try {
-                execute(message);
-            } catch (TelegramApiException e) {
-                log.error(e.getMessage());
-            }
-        }
+    @Override
+    public String getBotPath() {
+        return "/update";
+    }
+
+    @Override
+    public BotApiMethod<?> onWebhookUpdateReceived(Update update) {
+        return null;
     }
 }

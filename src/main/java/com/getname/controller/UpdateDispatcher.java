@@ -7,17 +7,18 @@ import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class UpdateProcessor {
+public class UpdateDispatcher {
 
     private final UpdateService service;
 
     private WeatherBot weatherBot;
 
-    public void registerBot(WeatherBot weatherBot) {
+    public void initBot(WeatherBot weatherBot) {
         this.weatherBot = weatherBot;
     }
 
@@ -40,6 +41,7 @@ public class UpdateProcessor {
 
         if (message.hasText()) {
             var text = message.getText();
+            log.debug(text);
 
             var response = service.process(text);
 
@@ -62,6 +64,10 @@ public class UpdateProcessor {
     }
 
     private void setView(SendMessage sendMessage) {
-        weatherBot.sendAnswerMessage(sendMessage);
+	    try {
+		    weatherBot.execute(sendMessage);
+	    } catch (TelegramApiException e) {
+		    log.error("Telegram execute error", e);
+	    }
     }
 }
